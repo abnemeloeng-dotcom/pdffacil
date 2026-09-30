@@ -153,5 +153,8 @@ $('bv').onclick=async()=>{if(!doc)return toast('Abra um PDF primeiro.');
   const b=await pd.save(),a=document.createElement('a');a.href=URL.createObjectURL(new Blob([b],{type:'application/pdf'}));
   a.download=curName.replace(/\.pdf$/i,'')+(placements.length?'-assinado':'')+'.pdf';document.body.appendChild(a);a.click();a.remove();toast('PDF salvo em Downloads.')}
  catch(x){toast('Não deu para salvar este PDF.')}};
+const erroPdf=()=>{V.innerHTML='<div id="vazio"><h1>Não abriu</h1><p>Esse arquivo não parece ser um PDF válido ou está protegido por senha.</p></div>'};
+if('launchQueue' in window)launchQueue.setConsumer(async p=>{if(!p.files||!p.files.length)return;try{const f=await p.files[0].getFile();await abrirBytes(new Uint8Array(await f.arrayBuffer()),f.name)}catch(x){erroPdf()}});
+(async()=>{if(!/[?&]shared=1/.test(location.search)||!window.caches)return;try{const c=await caches.open('pdffacil-share'),r=await c.match('shared-pdf');if(!r)return;const n=decodeURIComponent(r.headers.get('X-Name')||'arquivo.pdf'),b=new Uint8Array(await r.arrayBuffer());await c.delete('shared-pdf');history.replaceState(null,'','./');await abrirBytes(b,n)}catch(x){erroPdf()}})();
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>
