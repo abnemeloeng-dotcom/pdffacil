@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
   push:
     paths:
+      - 'index.html'
+      - 'gerar-projeto.sh'
+      - 'icon-512.png'
       - '.github/workflows/build-apk.yml'
 
 permissions:
@@ -31,4 +34,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk PDFFacil.apk
-          gh release create "v${{ github.run_number }}" PDFFacil.apk --title "PDFFácil v${{ github.run_number }}" --notes "APK do PDFFácil." --latest
+          TAG="v${{ github.run_number }}"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" PDFFacil.apk --title "PDFFácil $TAG" --notes "APK do PDFFácil." --latest
