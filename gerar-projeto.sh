@@ -43,8 +43,8 @@ android {
         applicationId 'br.pdffacil.app'
         minSdk 29
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        versionCode Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+        versionName '1.' + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
     }
     signingConfigs {
         release {
@@ -95,6 +95,11 @@ cat > app/src/main/AndroidManifest.xml <<'EOF'
                 <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
+        <provider
+            android:name=".CamProvider"
+            android:authorities="br.pdffacil.app.cam"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>
 EOF
@@ -103,6 +108,7 @@ cat > app/src/main/java/br/pdffacil/app/MainActivity.java <<'EOF'
 package br.pdffacil.app;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.database.Cursor;
@@ -123,6 +129,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.HashMap;
@@ -170,6 +177,7 @@ public class MainActivity extends Activity {
                 if (chooser != null) chooser.onReceiveValue(null);
                 chooser = cb;
                 try {
+                    if (p.isCaptureEnabled() && abrirCamera()) return true;
                     startActivityForResult(p.createIntent(), 1);
                 } catch (Exception e) {
                     chooser = null;
@@ -196,6 +204,34 @@ public class MainActivity extends Activity {
         if (req == 1 && chooser != null) {
             chooser.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data));
             chooser = null;
+        }
+        if (req == 2 && chooser != null) {
+            Uri u = fotoUri;
+            boolean ok = res == RESULT_OK && u != null
+                && new File(getCacheDir(), "cam/" + u.getLastPathSegment()).length() > 0;
+            chooser.onReceiveValue(ok ? new Uri[]{u} : null);
+            chooser = null;
+        }
+    }
+
+    private Uri fotoUri;
+
+    private boolean abrirCamera() {
+        try {
+            File dir = new File(getCacheDir(), "cam");
+            dir.mkdirs();
+            File[] old = dir.listFiles();
+            if (old != null) for (File f : old) f.delete();
+            String n = "foto_" + System.currentTimeMillis() + ".jpg";
+            fotoUri = Uri.parse("content://" + CamProvider.AUTH + "/" + n);
+            Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+            i.putExtra(MediaStore.EXTRA_OUTPUT, fotoUri);
+            i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            i.setClipData(ClipData.newRawUri("foto", fotoUri));
+            startActivityForResult(i, 2);
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -281,7 +317,13 @@ public class MainActivity extends Activity {
             try {
                 ContentValues v = new ContentValues();
                 v.put(MediaStore.Downloads.DISPLAY_NAME, name);
-                v.put(MediaStore.Downloads.MIME_TYPE, "application/pdf");
+                String l = name.toLowerCase();
+                String mt = "application/octet-stream";
+                if (l.endsWith(".pdf")) mt = "application/pdf";
+                else if (l.endsWith(".docx")) mt = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                else if (l.endsWith(".xlsx")) mt = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                else if (l.endsWith(".txt")) mt = "text/plain";
+                v.put(MediaStore.Downloads.MIME_TYPE, mt);
                 v.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
                 Uri u = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
                 if (u == null) return false;
@@ -312,6 +354,72 @@ public class MainActivity extends Activity {
                 return false;
             }
         }
+    }
+}
+EOF
+
+cat > app/src/main/java/br/pdffacil/app/CamProvider.java <<'EOF'
+package br.pdffacil.app;
+
+import android.content.ContentProvider;
+import android.content.ContentValues;
+import android.database.Cursor;
+import android.database.MatrixCursor;
+import android.net.Uri;
+import android.os.ParcelFileDescriptor;
+import android.provider.OpenableColumns;
+import java.io.File;
+import java.io.FileNotFoundException;
+
+public class CamProvider extends ContentProvider {
+    public static final String AUTH = "br.pdffacil.app.cam";
+
+    @Override
+    public boolean onCreate() {
+        return true;
+    }
+
+    private File file(Uri u) {
+        String n = u.getLastPathSegment();
+        if (n == null || n.contains("/") || n.contains("..")) return null;
+        File d = new File(getContext().getCacheDir(), "cam");
+        d.mkdirs();
+        return new File(d, n);
+    }
+
+    @Override
+    public ParcelFileDescriptor openFile(Uri u, String mode) throws FileNotFoundException {
+        File f = file(u);
+        if (f == null) throw new FileNotFoundException();
+        return ParcelFileDescriptor.open(f, ParcelFileDescriptor.parseMode(mode));
+    }
+
+    @Override
+    public Cursor query(Uri u, String[] p, String s, String[] a, String o) {
+        File f = file(u);
+        MatrixCursor c = new MatrixCursor(new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE});
+        if (f != null) c.addRow(new Object[]{f.getName(), f.length()});
+        return c;
+    }
+
+    @Override
+    public String getType(Uri u) {
+        return "image/jpeg";
+    }
+
+    @Override
+    public Uri insert(Uri u, ContentValues v) {
+        return null;
+    }
+
+    @Override
+    public int delete(Uri u, String s, String[] a) {
+        return 0;
+    }
+
+    @Override
+    public int update(Uri u, ContentValues v, String s, String[] a) {
+        return 0;
     }
 }
 EOF
