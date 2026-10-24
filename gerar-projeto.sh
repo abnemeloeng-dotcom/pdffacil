@@ -313,6 +313,17 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void openUrl(String url) {
+            try {
+                if (url == null || !url.startsWith("https://wa.me/")) return;
+                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Exception e) {
+            }
+        }
+
+        @JavascriptInterface
         public boolean saveBegin(String name) {
             try {
                 ContentValues v = new ContentValues();
